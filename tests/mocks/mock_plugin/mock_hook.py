@@ -2,7 +2,7 @@ from cat.mad_hatter.decorators import hook
 
 
 @hook(priority=2)
-def before_cat_sends_message(message, caller):
-    if "Priorities" in message.text:
-        message.text += " priority 2"
-    return message
+def after_agent_run(result):
+    # Data-only core hook: one argument (the piped TaskResult), no `caller`.
+    # Mutate in place; the change survives without a return.
+    result.args["mock_hook_priority_2"] = True

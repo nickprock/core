@@ -66,23 +66,16 @@ class Agent(Service):
             self.tools = await self.list_tools()
             self.directives = await self._resolve_directives()
 
-            self.task = await execute_hook(
-                "before_agent_execution", self.task
-            )
-            self.task = await execute_hook(
-                f"before_{self.slug}_agent_execution", self.task
-            )
+            # data-only hook: mutate the Task in place or return a replacement.
+            # Per-agent scoping is a directive's job, not a {slug} hook variant.
+            self.task = await execute_hook("before_agent_run", self.task)
 
             await self.start()
             await self.loop()
             await self.finish()
 
-            self.result = await execute_hook(
-                f"after_{self.slug}_agent_execution", self.result
-            )
-            self.result = await execute_hook(
-                "after_agent_execution", self.result
-            )
+            # data-only hook: mutate the TaskResult in place or return a replacement.
+            self.result = await execute_hook("after_agent_run", self.result)
 
         return self.result
 
@@ -151,32 +144,16 @@ class Agent(Service):
 
     async def get_system_prompt(self) -> str:
         """
-        Build the system prompt.
-        Base method delegates prompt construction to hooks.
-        Prompt is built in two parts: prefix and suffix.
-        Prefix is the main prompt, suffix can be used to append extra instructions and context (i.e. RAG).
-        For a static prompt just use class level attribute `Agent.system_prompt`. Override this method for dynamic behavior.
+        Build the system prompt from the agent's own configuration.
+
+        For a static prompt just set the class attribute `Agent.system_prompt`.
+        Override this method for dynamic behavior. To shape the prompt
+        cross-cuttingly, append to `agent.system_prompt` from a directive's
+        `start()` (persistent) or `step()` (per-turn) — prompt shaping is a
+        directive's job, not a hook's.
         """
 
-        prompt = type(self).system_prompt
-
-        prompt = await execute_hook(
-            "agent_prompt_prefix",
-            prompt
-        )
-        prompt = await execute_hook(
-            f"agent_{self.slug}_prompt_prefix",
-            prompt
-        )
-        prompt_suffix = await execute_hook(
-            "agent_prompt_suffix", ""
-        )
-        prompt_suffix = await execute_hook(
-            f"agent_{self.slug}_prompt_suffix",
-            prompt_suffix
-        )
-
-        return prompt + prompt_suffix
+        return type(self).system_prompt
 
     async def list_tools(self) -> List[Tool]:
         """
@@ -185,8 +162,8 @@ class Agent(Service):
 
         Tools are agent-scoped — an agent does NOT silently inherit every plugin's
         tools. To share tools across agents, put them on a mixin and inherit it;
-        to add tools cross-cuttingly, append to `agent.tools` from a directive's
-        `start()`, or filter/extend the list here via the `agent_allowed_tools` hook.
+        to add or filter tools cross-cuttingly, mutate `agent.tools` from a
+        directive's `start()` — tool shaping is a directive's job, not a hook's.
         """
 
         # Get MCP tools
@@ -199,12 +176,7 @@ class Agent(Service):
         # Get agent's own internal tools (own + inherited via the class MRO)
         agent_tools = self.instantiate_agent_tools()
 
-        tools = await execute_hook(
-            "agent_allowed_tools",
-            agent_tools + mcp_tools
-        )
-
-        return tools
+        return agent_tools + mcp_tools
 
     async def _resolve_directives(self) -> List["Directive"]:
         """

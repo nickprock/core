@@ -70,7 +70,7 @@ class CheshireCat:
         self.refresh_endpoints()
 
         # allow plugins to hook the refresh
-        await self.mad_hatter.execute_hook("after_mad_hatter_refresh", None)
+        await self.mad_hatter.execute_hook("after_plugins_reload", None)
 
         log.welcome()
 

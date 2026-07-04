@@ -175,12 +175,62 @@ async def auth(request, role: str | None = None) -> "User | None":
 # ---------------------------------------------------------------------------
 # Hooks — define with @hook, fire with await execute_hook(name, value)
 # ---------------------------------------------------------------------------
+#
+# Hooks vs directives — the one rule
+# ----------------------------------
+#   Need the agent?  -> write a Directive (agent-scoped, stateful, opt-in).
+#   Transform a global pipeline event?  -> write a hook.
+# A hook is data-only: it never receives the agent. Reaching the agent is the
+# directive's job.
+#
+# The core hook catalog (five lifecycle events)
+# ---------------------------------------------
+#   Hook                  | Value       | Fires
+#   ----------------------|-------------|------------------------------------
+#   before_cat_bootstrap  | None        | app starting, after plugin discovery
+#   after_cat_bootstrap   | None        | app ready
+#   after_plugins_reload  | None        | plugins/endpoints/services reindexed
+#   before_agent_run      | Task        | an agent is about to run (message in)
+#   after_agent_run       | TaskResult  | an agent finished (message out)
+# Plugins may also define and fire their own hooks by any name (the `uploads`
+# plugin's `after_file_upload(UploadedFile)` is the reference example); they
+# follow the same single-value, data-only, in-place-mutation contract.
+#
+# In-place mutation
+# -----------------
+# A handler receives exactly one argument: the piped value. Mutate it in place
+# and return nothing — the change survives to the next handler and the caller,
+# because the pipe keeps the same reference on a None return. Return a value
+# only to replace the object wholesale. `None`-valued hooks are pure reactions.
+#
+# Ambient contract (what you can reach from inside a hook)
+# --------------------------------------------------------
+#   ccat()  -> always available.
+#   user    -> request-scoped: resolves in before_agent_run / after_agent_run
+#              (and plugin request hooks like after_file_upload); raises
+#              RuntimeError in the bootstrap/reload hooks (no active request).
+#
+# v1 -> v2 migration
+# ------------------
+#   after_mad_hatter_refresh                 -> after_plugins_reload (rename)
+#   before/after_agent_execution             -> before/after_agent_run (rename)
+#   before/after_{slug}_agent_execution      -> a Directive on that agent
+#   agent_prompt_prefix / _suffix            -> a Directive: append to
+#                                               agent.system_prompt in start()/step()
+#   agent_{slug}_prompt_prefix / _suffix     -> same, attached to that agent only
+#   agent_allowed_tools                      -> a Directive: mutate agent.tools in start()
+
 
 async def execute_hook(name: str, value=None):
     """
     Fire a hook from anywhere, returning the (possibly mutated) value:
 
-        value = await execute_hook("before_agent_execution", value)
+        value = await execute_hook("before_agent_run", value)
+
+    Handlers run priority-first with error isolation. Each receives exactly one
+    argument (the piped value) and may mutate it in place (no return needed) or
+    return a replacement. See the module section above for the core catalog, the
+    ambient contract, and the v1->v2 migration table.
     """
     return await ccat().mad_hatter.execute_hook(name, value)
 
@@ -191,7 +241,10 @@ def hook(*args, priority: int = 1):
 
         `@hook`, `@hook("custom_name")`, `@hook(priority=2)`
 
-    To *fire* a hook, use `await execute_hook(name, value)`.
+    A hook handler takes exactly one argument — the piped value — and is
+    data-only: it never receives the agent (that's a directive's job). Mutate
+    the value in place, or return a replacement. To *fire* a hook, use
+    `await execute_hook(name, value)`.
     """
     from cat.mad_hatter.decorators import hook as hook_decorator
     return hook_decorator(*args, priority=priority)

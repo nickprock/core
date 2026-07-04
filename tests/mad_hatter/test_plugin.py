@@ -65,7 +65,7 @@ def test_activate_plugin(plugin):
     for hook in plugin.hooks:
         assert isinstance(hook, Hook)
         assert hook.plugin_id == "mock_plugin"
-        assert hook.name == "before_cat_sends_message"
+        assert hook.name == "after_agent_run"
         assert isfunction(hook.function)
         assert hook.priority > 1  # mock hooks set priority 2 and 3
 

@@ -47,10 +47,10 @@ async def test_plugin_install(mad_hatter: MadHatter, plugin_is_flat):
         assert h.plugin_id == "mock_plugin"
 
     # hooks are cached in mad_hatter, sorted by priority (mock sets 3 then 2)
-    cached_hooks = mad_hatter.hooks["before_cat_sends_message"]
+    cached_hooks = mad_hatter.hooks["after_agent_run"]
     assert [h.priority for h in cached_hooks] == [3, 2]
     for cached_hook in cached_hooks:
-        assert cached_hook.name == "before_cat_sends_message"
+        assert cached_hook.name == "after_agent_run"
         assert cached_hook.plugin_id == "mock_plugin"
         assert id(cached_hook) in {id(h) for h in plugin.hooks}  # same objects
 
